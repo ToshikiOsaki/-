@@ -1,0 +1,177 @@
+import requests
+from bs4 import BeautifulSoup
+import re
+import openpyxl
+import os
+import urllib.parse
+import time
+import random
+###＃
+
+siba_dart_number = ["1"] #3は障害競走だけど使わない
+#siba_dart_number = ["1", "2"]
+# 　↓ここに適宜取得期間を入力する（ループには入れない）
+tyousa_kukann = "&start_year=2019&start_mon=1&end_year=2023&end_mon=12"
+# 　↓　最後から３番目
+keibajyou_number = ["01","02","03","04","05","06","07","08","09","10"]
+# keibajyou_number = ["01", "02"]
+# ↓　１番最後
+grade_sentence = ["&grade%5B%5D=1&grade%5B%5D=2&grade%5B%5D=3&grade%5B%5D=11&grade%5B%5D=4","&grade%5B%5D=5","&grade%5B%5D=6","&grade%5B%5D=7","&grade%5B%5D=9","&grade%5B%5D=8"]
+# 　↓　最後から２番目
+# kyori = ["1000以下","1100","1150","1200","1300","1400","1500"]
+kyori = ["1000以下","1100","1150","1200","1300","1400","1500","1600","1700","1800","1900","2000","2100","2200","2300","2400",\
+         "2500","2600","3000","3200","3400","3600"]
+# ↓こいつが後ろから０番目、本当の１番最後
+page_number = ["","&page=2","&page=3"]
+
+# 　多重ループで使う変数入りのURL
+# url = "https://db.netkeiba.com/?pid=race_list&word=&track%5B%5D="+f"{len(siba_dart_number)}"\
+#    +f"{tyousa_kukann}"+"&jyo%5B%5D="+f"{keibajyou_number}"+f"{grade_sentence}"+"&kyori_min=&kyori_max=&kyori%5B%5D="+f"{kyori}"+"&sort=date&list=100"+f"{page_number}"
+
+for x in range(len(siba_dart_number)):
+    for y in range(len(keibajyou_number)):
+        for z in range(len(kyori)):
+            for a in range(len(grade_sentence)):
+                for b in range(len(page_number)):
+                    # サーバーへの負荷を考慮して1〜2秒のランダムな待機
+                    time.sleep(random.uniform(1, 2))
+                    
+
+                    def main():
+                        # 指定されたURL
+                        #url = "https://db.netkeiba.com/?pid=race_list&word=&track%5B%5D=1&start_year=2019&start_mon=1&end_year=2023&end_mon=12&jyo%5B%5D=01&grade%5B%5D=1&grade%5B%5D=2&grade%5B%5D=3&grade%5B%5D=11&grade%5B%5D=4&kyori_min=&kyori_max=&kyori%5B%5D=1200&sort=date&list=100"
+                        # 日本語（"1000以下"など）が含まれる場合、netkeibaの仕様に合わせてEUC-JPでURLエンコードする
+                        encoded_kyori = urllib.parse.quote(kyori[z], encoding='euc-jp')
+                        url = "https://db.netkeiba.com/?pid=race_list&word=&track%5B%5D="+f"{siba_dart_number[x]}" \
+                                            +f"{tyousa_kukann}"+"&jyo%5B%5D="+f"{keibajyou_number[y]}"+f"{grade_sentence[a]}"\
+                                            "&kyori_min=&kyori_max=&kyori%5B%5D="+f"{encoded_kyori}"+"&sort=date&list=100"+f"{page_number[b]}"
+
+
+                        # ブラウザを模倣するためのヘッダー（アクセス拒否を防ぐため）
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                        }
+
+                        try:
+                            response = requests.get(url, headers=headers)
+                            response.raise_for_status()
+                            # netkeibaはEUC-JPエンコーディングを使用しているため設定
+                            response.encoding = 'EUC-JP'
+                        except requests.RequestException as e:
+                            print(f"URLの取得中にエラーが発生しました: {e}")
+                            return
+
+                        soup = BeautifulSoup(response.text, 'html.parser')
+
+                        combined_string = ""
+                        # --- 検索条件の文字列を抽出・加工 ---
+                        search_result_text_element = soup.find('div', class_='search_result_box')
+                        if search_result_text_element:
+                            # get_text()でテキスト部分のみ取得し、先頭と末尾の空白を削除
+                            full_text = search_result_text_element.get_text(strip=True)
+                            
+                            if "見つかりませんでした" in full_text:
+                                print("検索結果が見つかりませんでした。スキップします。")
+                                return
+                            
+                            # 正規表現で[]の中身を抽出
+                            # パターン解説: \[ は '[' をエスケープしたもの。(.*?) は最短マッチで任意の文字列をキャプチャ。\] は ']' をエスケープしたもの。
+                            matches = re.findall(r'\[(.*?)\]', full_text)
+                            
+                            if matches:
+                                # 期間の情報は2番目の要素に入っていると仮定して削除します。
+                                # これにより、URLで日付を変更した場合でも、このコードを修正する必要がなくなります。
+                                if len(matches) > 1:
+                                    del matches[1]
+
+                                # 抽出した文字列のリストを連結して一つの文字列にする
+                                combined_string = "".join(matches)
+                                
+                                # 指定された日付範囲の文字列を削除
+                                combined_string = combined_string.replace("2019年1月～2023年12月", "")
+                                
+                                print("--- 抽出・結合された検索条件 ---")
+                                print(combined_string)
+                                print("-" * 30) # 見やすくするための区切り線
+
+                        # レース一覧のテーブルを取得 (通常 class="race_table_01")
+                        table = soup.find('table', class_='race_table_01')
+                        if not table:
+                            print("レース一覧のテーブルが見つかりませんでした。")
+                            return
+
+                        if not re.search(r'\d+:\d+\.\d+', table.get_text()):
+                            print("有効なタイムが見つかりませんでした。スキップします。")
+                            return
+
+                        rows = table.find_all('tr')
+                        if not rows:
+                            print("テーブルに行が見つかりませんでした。")
+                            return
+
+                        # ヘッダー行から「タイム」列のインデックスを探す
+                        header_cells = rows[0].find_all(['th', 'td'])
+                        time_col_index = -1
+                        for i, cell in enumerate(header_cells):
+                            if 'タイム' in cell.get_text():
+                                time_col_index = i
+                                break
+                        
+                        if time_col_index == -1:
+                            print("「タイム」列が見つかりませんでした。")
+                            return
+
+                        times_in_seconds = []
+
+                        print("--- 抽出されたタイム ---")
+                        # データ行をループ (ヘッダーはスキップ)
+                        for row in rows[1:]:
+                            cols = row.find_all('td')
+                            # 列数が足りているか確認
+                            if len(cols) > time_col_index:
+                                time_str = cols[time_col_index].get_text(strip=True)
+                                if time_str:
+                                    print(time_str)
+                                    
+                                    # m:ss.d 形式を秒(float)に変換してリストに追加
+                                    try:
+                                        if ':' in time_str:
+                                            minutes, seconds = time_str.split(':')
+                                            total_seconds = int(minutes) * 60 + float(seconds)
+                                            times_in_seconds.append(total_seconds)
+                                        else:
+                                            # 分が含まれていない場合（秒のみ）
+                                            times_in_seconds.append(float(time_str))
+                                    except ValueError:
+                                        # 数値変換できないデータはスキップ
+                                        continue
+
+                        if times_in_seconds:
+                            avg_seconds = sum(times_in_seconds) / len(times_in_seconds)
+                            
+                            # 平均秒数を m:ss.d 形式に戻す
+                            avg_minutes = int(avg_seconds // 60)
+                            avg_remainder_seconds = avg_seconds % 60
+                            
+                            print("\n--- 結果 ---")
+                            print(f"データ数: {len(times_in_seconds)}")
+                            print(f"平均タイム (秒): {avg_seconds:.2f}")
+                            print(f"平均タイム (フォーマット): {avg_minutes}:{avg_remainder_seconds:04.1f}")
+
+                            # Excelへの書き込み
+                            file_path = r"C:\Users\tosak\OneDrive\ドキュメント\2023年締過去５年の平均タイムAIコードで取得.xlsx"
+                            if os.path.exists(file_path):
+                                wb = openpyxl.load_workbook(file_path)
+                                ws = wb.active
+                            else:
+                                wb = openpyxl.Workbook()
+                                ws = wb.active
+
+                            ws.append([combined_string, len(times_in_seconds), f"{avg_minutes}:{avg_remainder_seconds:04.1f}"])
+                            wb.save(file_path)
+                            print(f"Excelファイルに保存しました: {file_path}")
+                        else:
+                            print("\n平均を計算するための有効なタイムが見つかりませんでした。")
+
+                    if __name__ == "__main__":
+                        main()
